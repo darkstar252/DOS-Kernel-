@@ -26,6 +26,9 @@
 /* Cambridge, MA 02139, USA.                                    */
 /****************************************************************/
 
+#ifndef DOSC_VERSION_H
+#define DOSC_VERSION_H
+
 /* The version the kernel reports as compatible with */
 #ifdef WITHFAT32
 #define MAJOR_RELEASE   7
@@ -49,3 +52,4 @@
 #define xKVS(v,s,o) KVS(v,s,o)
 #define KERNEL_VERSION_STRING xKVS(KERNEL_VERSION, REVISION_SEQ, OEM_ID)
 
+#endif /* DOSC_VERSION_H */
