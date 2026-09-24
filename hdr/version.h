@@ -26,14 +26,9 @@
 /* Cambridge, MA 02139, USA.                                    */
 /****************************************************************/
 
-/* The version the kernel reports as compatible with */
-#ifdef WITHFAT32
-#define MAJOR_RELEASE   7
-#define MINOR_RELEASE   10
-#else
-#define MAJOR_RELEASE   6
-#define MINOR_RELEASE   22
-#endif
+/* Report DOS 5.00 for maximum compatibility with Windows 3.x. */
+#define MAJOR_RELEASE   5
+#define MINOR_RELEASE   0
 
 /* The actual kernel revision, 2000+REVISION_SEQ = 2.REVISION_SEQ */
 #define REVISION_SEQ    46      /* returned in BL by int 21 function 30 */
