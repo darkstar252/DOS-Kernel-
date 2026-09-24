@@ -26,14 +26,12 @@
 /* Cambridge, MA 02139, USA.                                    */
 /****************************************************************/
 
-/* Keep separate build configurations while reporting DOS 5.00 in both. */
-#ifdef WITHFAT32
+#ifndef DOSC_VERSION_H
+#define DOSC_VERSION_H
+
+/* Keep FAT32 as a build feature while reporting DOS 5.00 in both builds. */
 #define MAJOR_RELEASE   5
 #define MINOR_RELEASE   0
-#else
-#define MAJOR_RELEASE   5
-#define MINOR_RELEASE   0
-#endif
 
 /* The actual kernel revision, 2000+REVISION_SEQ = 2.REVISION_SEQ */
 #define REVISION_SEQ    46      /* returned in BL by int 21 function 30 */
@@ -49,3 +47,4 @@
 #define xKVS(v,s,o) KVS(v,s,o)
 #define KERNEL_VERSION_STRING xKVS(KERNEL_VERSION, REVISION_SEQ, OEM_ID)
 
+#endif /* DOSC_VERSION_H */
