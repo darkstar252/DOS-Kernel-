@@ -1,25 +1,38 @@
-# Windows 3.0 real-mode compatibility work
+# First source patch: EXEC SFT ownership
 
-This branch targets Windows 3.0 real mode on a 486/VGA machine in 86Box.
+The concrete source patch is:
 
-## First loader finding
+- [0001-task-close-exec-sft-once.patch](../patches/0001-task-close-exec-sft-once.patch)
+- [kernel/task.c in the branch](https://github.com/darkstar252/DOS-Kernel-/blob/win30-486-vga/kernel/task.c)
 
-The DOS executable loader is the first compatibility boundary to test. `DosExec()` in `kernel/task.c` invokes `DosComLoader()` or `DosExeLoader()` and then closes the SFT. Both loader paths currently also close the SFT internally. This creates a double-close path for successful COM and EXE loads.
+## What it changes
 
-The first behavioral patch should make file-handle ownership explicit: `DosExec()` owns the SFT opened for the execution request, and the loader functions must not close that SFT. Error paths should return through `DosExec()`, which performs the single close.
+`DosExec()` opens the executable SFT and already closes it after
+`DosComLoader()` or `DosExeLoader()` returns. Both loader functions also
+closed the same SFT internally. The patch removes the two loader-side
+closes and leaves ownership with `DosExec()`.
 
-This matters to Windows startup because `WIN.COM` performs repeated executable and support-file opens during initialization. A second close can operate on a reused or already-invalid SFT and obscure the original startup failure.
+This keeps the change limited to the EXEC path and covers COM, MZ EXE,
+LOAD, OVERLAY, and loader-error returns without changing the memory
+allocator or interrupt ABI.
 
-## Test procedure
+## Applying it locally
 
-1. Build this branch in the 86Box DOS build environment.
-2. Boot the resulting kernel on the 486/VGA profile.
-3. Run a small COM program, then a normal MZ EXE, and verify that the parent shell remains usable.
-4. Install and run Windows 3.0 in real mode.
-5. Record the first visible error and the last successful file operation.
+From the repository root on a system with `patch`:
 
-Do not add Windows installation media, ROMs, disk images, or generated binaries to this repository.
+```sh
+patch -p1 < patches/0001-task-close-exec-sft-once.patch
+```
 
-## Scope
+Then inspect the result:
 
-This document records the first narrowly scoped compatibility issue. Copyright, licensing, and provenance notices in the original source remain unchanged.
+```sh
+git diff -- kernel/task.c
+git diff --check
+```
+
+The expected diff removes only the two `DosCloseSft(fd, FALSE);` calls
+inside `DosComLoader()` and `DosExeLoader()`. `DosExec()` keeps its close.
+
+Build and test the resulting source in the 86Box DOS toolchain. Do not
+commit generated binaries, disk images, ROMs, or Windows installation media.
