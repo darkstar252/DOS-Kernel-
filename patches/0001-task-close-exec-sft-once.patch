@@ -1,0 +1,30 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: darkstar252 <39539269+darkstar252@users.noreply.github.com>
+Date: Thu, 24 Sep 2026 00:00:00 +0000
+Subject: [PATCH] task: close exec SFT once in DosExec
+
+DosExec owns the SFT opened for an EXEC request.  The COM and EXE
+loaders must leave that SFT open so DosExec can close it on every
+success and error path exactly once.
+
+---
+ kernel/task.c | 4 ----
+ 1 file changed, 4 deletions(-)
+
+diff --git a/kernel/task.c b/kernel/task.c
+index 1f31b926093e..000000000000 100644
+--- a/kernel/task.c
++++ b/kernel/task.c
+@@ -537,7 +537,6 @@ COUNT DosComLoader(BYTE FAR * namep, exec_blk * exp, COUNT mode, COUNT fd)
+      /* lpproj: some device drivers (not exe) are larger than 0xff00bytes... */
+      DosRWSft(fd, (mode == OVERLAY) ? 0xfffeU : 0xff00U, sp, XFR_READ);
+-    DosCloseSft(fd, FALSE);
+   }
+@@ -805,7 +804,6 @@ COUNT DosExeLoader(BYTE FAR * namep, exec_blk * exp, COUNT mode, COUNT fd)
+   }
+ 
+   /* and finally close the file                           */
+-  DosCloseSft(fd, FALSE);
+ 
+   /* exit here for overlay                                */
+*** End Patch
