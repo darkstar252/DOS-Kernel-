@@ -122,12 +122,12 @@ WinIdle:					; only HLT if at haltlevel 2+
 
 Int2f3:         cmp     ax,1680h                ; Win "release time slice"
                 je      WinIdle
+                cmp     ah,16h
+                je      Win16Broadcast          ; Windows 3.x /3 contract: AH=16h
                 cmp     ah,12h
                 je      IntDosCal               ; Dos Internal calls
                 cmp     ah,13h
                 je      IntDosCal               ; Install Int13h Hook
-                cmp     ah,16h
-                je      IntDosCal               ; Win (Multitasking) Hook
                 cmp     ah,46h
                 je      IntDosCal               ; Win Hook to avoid MCB corruption
 
@@ -152,32 +152,32 @@ Check4Share:
                 cmp     ah,14h                  ; NLSFUNC.EXE interrupt?
                 jne     Int2f?iret              ; yes, do installation check
 Int2f?14:      ;; MUX-14 -- NLSFUNC API
-               ;; all functions are passed to syscall_MUX14
+                ;; all functions are passed to syscall_MUX14
 			   ;; Note: this is the kernel's default NLS handlers, if made it
 			   ;; here then no other program (e.g. NLSFUNC) hooked int 2F/14
 			   ;; and handled request (either none loaded or choose not to)
-               push bp                 ; Preserve BP later on
-               Protect386Registers
-               PUSH$ALL
-               SwitchToInt2fStack
-               call _syscall_MUX14
-               DoneInt2fStack
-               pop bp                  ; Discard incoming AX
-               push ax                 ; Correct stack for POP$ALL
-               POP$ALL
-               Restore386Registers
-               mov bp, sp
-               or ax, ax
-               jnz Int2f?14?1          ; must return set carry
-                   ;; -6 == -2 (CS), -2 (IP), -2 (flags)
-                   ;; current SP = on old_BP
-               and BYTE [bp-6], 0feh   ; clear carry as no error condition
-               pop bp
-               iret
+                push bp                 ; Preserve BP later on
+                Protect386Registers
+                PUSH$ALL
+                SwitchToInt2fStack
+                call _syscall_MUX14
+                DoneInt2fStack
+                pop bp                  ; Discard incoming AX
+                push ax                 ; Correct stack for POP$ALL
+                POP$ALL
+                Restore386Registers
+                mov bp, sp
+                or ax, ax
+                jnz Int2f?14?1          ; must return set carry
+                    ;; -6 == -2 (CS), -2 (IP), -2 (flags)
+                    ;; current SP = on old_BP
+                and BYTE [bp-6], 0feh   ; clear carry as no error condition
+                pop bp
+                iret
 Int2f?14?1:        or BYTE [bp-6], 1
-               pop bp
+                pop bp
 Int2f?iret:
-               iret
+                iret
 
 ; DRIVER.SYS calls - now only 0803.
 DriverSysCal:
@@ -188,6 +188,192 @@ DriverSysCal:
                 mov     di, _Dyn+2
                 jmp     short Int2f?iret
 
+; ====================================================================
+; Windows 3.x enhanced-mode (386) DOSMGR contract handler
+; INT 2Fh AH=16h with AL = 05h/06h/07h
+; ====================================================================
+; This handler implements the Windows 3.x /3 contract at the correct layer.
+; It is NOT part of the generic INT2F/12xx flow.
+; It responds to:
+;   AL=05h  : Windows startup broadcast
+;   AL=06h  : Windows shutdown broadcast
+;   AL=07h  : DOSMGR query (requires BX=0015h)
+;
+Win16Broadcast:
+                ; Dispatch by AL subfunction
+                cmp     al,05h
+                je      .win16_startup
+                cmp     al,06h
+                je      .win16_shutdown
+                cmp     al,07h
+                je      .win16_dosmgr
+                ; Unknown subfunction: just return
+                iret
+
+.win16_startup:
+                ; Windows startup broadcast (AL=05h)
+                ; Minimal acknowledgement: set up register structure
+                ; and pass to the C handler for state tracking
+                push    ax
+                push    cx
+                push    dx
+                push    bx
+                push    bp
+                push    si
+                push    di
+                push    ds
+                push    es
+
+                cld
+
+%if XCPU >= 386
+  %ifdef WATCOM
+                mov     si,fs
+                mov     di,gs
+  %else
+                Protect386Registers
+  %endif
+%endif
+
+                SwitchToInt2fStack
+                ; Call C handler with AL=05h
+                mov     al,05h
+                extern  _win16_startup_handler
+                call    _win16_startup_handler
+                DoneInt2fStack
+
+%if XCPU >= 386
+  %ifdef WATCOM
+                mov     fs,si
+                mov     gs,di
+  %else
+                Restore386Registers
+  %endif
+%endif
+
+                pop     es
+                pop     ds
+                pop     di
+                pop     si
+                pop     bp
+                pop     bx
+                pop     dx
+                pop     cx
+                pop     ax
+
+                iret
+
+.win16_shutdown:
+                ; Windows shutdown broadcast (AL=06h)
+                ; Minimal acknowledgement
+                push    ax
+                push    cx
+                push    dx
+                push    bx
+                push    bp
+                push    si
+                push    di
+                push    ds
+                push    es
+
+                cld
+
+%if XCPU >= 386
+  %ifdef WATCOM
+                mov     si,fs
+                mov     di,gs
+  %else
+                Protect386Registers
+  %endif
+%endif
+
+                SwitchToInt2fStack
+                ; Call C handler with AL=06h
+                mov     al,06h
+                extern  _win16_shutdown_handler
+                call    _win16_shutdown_handler
+                DoneInt2fStack
+
+%if XCPU >= 386
+  %ifdef WATCOM
+                mov     fs,si
+                mov     gs,di
+  %else
+                Restore386Registers
+  %endif
+%endif
+
+                pop     es
+                pop     ds
+                pop     di
+                pop     si
+                pop     bp
+                pop     bx
+                pop     dx
+                pop     cx
+                pop     ax
+
+                iret
+
+.win16_dosmgr:
+                ; DOSMGR query (AL=07h)
+                ; BX must be 0015h for Windows DOSMGR
+                cmp     bx,0015h
+                jne     .exit_dosmgr
+
+                ; Set up register structure for C handler
+                push    ax
+                push    cx
+                push    dx
+                push    bx
+                push    bp
+                push    si
+                push    di
+                push    ds
+                push    es
+
+                cld
+
+%if XCPU >= 386
+  %ifdef WATCOM
+                mov     si,fs
+                mov     di,gs
+  %else
+                Protect386Registers
+  %endif
+%endif
+
+                SwitchToInt2fStack
+                ; Call C handler with AL=07h and CX=selector
+                mov     al,07h
+                extern  _win16_dosmgr_handler
+                call    _win16_dosmgr_handler
+                DoneInt2fStack
+
+%if XCPU >= 386
+  %ifdef WATCOM
+                mov     fs,si
+                mov     gs,di
+  %else
+                Restore386Registers
+  %endif
+%endif
+
+                pop     es
+                pop     ds
+                pop     di
+                pop     si
+                pop     bp
+                pop     bx
+                pop     dx
+                pop     cx
+                pop     ax
+
+                iret
+
+.exit_dosmgr:
+                ; Not a DOSMGR query; just return
+                iret
 
 ;**********************************************************************
 ; internal dos calls INT2F/12xx and INT2F/4A01,4A02 - handled through C 
@@ -385,19 +571,19 @@ remote_lseek:   ; arg is a pointer to the long seek value
                 ; "fall through"
 
 remote_getfattr:        
-				stc                     ; assume unsupported/failed unless carry clear on return
+			stc                     ; assume unsupported/failed unless carry clear on return
                 int     2fh
                 jc      ret_neg_ax
                 jmp     short ret_int2f
 
 remote_lock_unlock:
-		mov	dx, cx   	; parameter block (dx) in arg
-		mov	bx, cx
-		mov	bl, [bx + 8]	; unlock or not
-		mov	cx, 1
-		int	0x2f
-		jnc	ret_set_ax_to_carry
-		mov	ah, 0
+	mov	dx, cx   	; parameter block (dx) in arg
+	mov	bx, cx
+	mov	bl, [bx + 8]	; unlock or not
+	mov	cx, 1
+	int	0x2f
+	jnc	ret_set_ax_to_carry
+	mov	ah, 0
                 jmp     short ret_neg_ax
 
 ;long ASMPASCAL network_redirector_mx(unsigned cmd, void far *s, void *arg)
@@ -440,7 +626,7 @@ call_int2f:
 
 int2f_call:
                 xor     cx, cx         ; default to success error code but
-				stc                    ; assume unsupported/failed unless carry clear on return
+			stc                    ; assume unsupported/failed unless carry clear on return
                 int     2fh
                 pop     bx
                 jnc     ret_set_ax_to_cx
@@ -465,7 +651,7 @@ remote_print_doredir:                  ; di points to an lregs structure
                 mov     si,[di+8]
                 lds     di,[di+0xa]
 
-				stc                     ; assume unsupported/failed unless carry clear on return
+			stc                     ; assume unsupported/failed unless carry clear on return
                 int     2fh
                 pop     bx              ; restore stack and ds=ss
                 push    ss
@@ -476,7 +662,7 @@ ret_set_ax_to_carry:                    ; carry => -1 else 0 (SUCCESS)
                 jmp     short ret_int2f
 
 remote_getfree:
-				stc                     ; assume unsupported/failed unless carry clear on return
+			stc                     ; assume unsupported/failed unless carry clear on return
                 int     2fh
                 pop     di              ; retrieve pushed pointer arg
                 jc      ret_set_ax_to_carry
@@ -488,7 +674,7 @@ remote_getfree:
                 jmp     short ret_set_ax_to_carry
 
 remote_rw:
-				stc                     ; assume unsupported/failed unless carry clear on return
+			stc                     ; assume unsupported/failed unless carry clear on return
                 int     2fh
                 jc      ret_min_dx_ax
                 xor     dx, dx         ; dx:ax := dx:cx = bytes read
@@ -505,7 +691,7 @@ qremote_fn:
 remote_process_end:                   ; Terminate process
                 mov     ds, [_cu_psp]
 int2f_restore_ds:
-				stc                     ; assume unsupported/failed unless carry clear on return
+			stc                     ; assume unsupported/failed unless carry clear on return
                 int     2fh
                 push    ss
                 pop     ds
